@@ -4,6 +4,8 @@ A 4-member class project: a mobile-first weather app that adapts to each person.
 has a personalized homepage, a live radar map, Farm and Health hubs, journey and
 event planning, and community weather reports on its own backend.
 
+**Live:** https://mausam-235f.onrender.com (free hosting: the first visit after a quiet spell can take up to a minute).
+
 This is a student prototype. It is not an official India Meteorological Department
 (IMD) product, and its alerts are not official warnings.
 
