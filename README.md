@@ -111,6 +111,11 @@ user actions.
 To use a different weather source, such as IMD's own API, change only `api.js` so it
 returns the same format.
 
+Weather models disagree by a degree or two, so temperature, feels-like and humidity are the
+average of three models: Europe's ECMWF, Germany's ICON and the USA's GFS (`blendModels` in
+`api.js`). Everything else comes from Open-Meteo's best model for the place. If the blend
+request fails, the app shows the single best model.
+
 ## Data and privacy
 
 | Service | Used for |

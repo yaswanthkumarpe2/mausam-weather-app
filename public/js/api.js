@@ -26,6 +26,74 @@ const AIR_CURRENT_FIELDS = [
   'us_aqi', 'pm2_5', 'pm10', 'ozone', 'nitrogen_dioxide', 'sulphur_dioxide', 'carbon_monoxide',
 ];
 
+// Weather models disagree by a degree or two, so temperature and humidity are averaged
+// over three national models: Europe's ECMWF, Germany's ICON and the USA's GFS.
+export const BLEND_MODELS = ['ecmwf_ifs025', 'icon_seamless', 'gfs_seamless'];
+const BLEND_HOURLY = ['temperature_2m', 'apparent_temperature', 'relative_humidity_2m'];
+const BLEND_DAILY = ['temperature_2m_max', 'temperature_2m_min'];
+
+const round1 = (value) => Math.round(value * 10) / 10;
+const meanOf = (values) => {
+  const usable = values.filter(Number.isFinite);
+  return usable.length ? round1(usable.reduce((sum, v) => sum + v, 0) / usable.length) : null;
+};
+
+// For each time in `times`, the average of the models' values for `field` (or null).
+function blendSeries(times, block, field) {
+  const index = new Map(block.time.map((time, i) => [time, i]));
+  return times.map((time) => {
+    const i = index.get(time);
+    return i == null ? null : meanOf(BLEND_MODELS.map((model) => block[`${field}_${model}`]?.[i]));
+  });
+}
+
+// Value of an hourly series at a moment between two hours, by straight-line interpolation.
+function valueAt(series, i, fraction) {
+  const a = series[i];
+  const b = series[i + 1];
+  if (!Number.isFinite(a)) return null;
+  return Number.isFinite(b) ? a + (b - a) * fraction : a;
+}
+
+// Returns a copy of the main forecast `raw` with temperature, feels-like and humidity
+// replaced by the average of BLEND_MODELS from `multi`. Open-Meteo gives per-model values
+// only for hourly and daily data, so the 15-minute "current" reading keeps its freshness
+// and is shifted by the gap between the blend and the main model at this moment.
+export function blendModels(raw, multi) {
+  if (!multi?.hourly?.time || !multi?.daily?.time) return raw;
+  const out = structuredClone(raw);
+
+  for (const field of BLEND_HOURLY) {
+    const blended = blendSeries(raw.hourly.time, multi.hourly, field);
+    const whole = field === 'relative_humidity_2m'; // humidity is shown as a whole percentage
+    out.hourly[field] = blended.map((value, i) => (value == null ? raw.hourly[field]?.[i] ?? null : whole ? Math.round(value) : value));
+  }
+  for (const field of BLEND_DAILY) {
+    const blended = blendSeries(raw.daily.time, multi.daily, field);
+    out.daily[field] = blended.map((value, i) => value ?? raw.daily[field][i]);
+  }
+
+  const c = raw.current;
+  const hour = raw.hourly.time.indexOf(`${c.time.slice(0, 13)}:00`);
+  if (hour >= 0) {
+    const fraction = Number(c.time.slice(14, 16)) / 60;
+    for (const field of BLEND_HOURLY) {
+      const shift = valueAt(out.hourly[field], hour, fraction) - valueAt(raw.hourly[field] ?? [], hour, fraction);
+      if (Number.isFinite(shift) && Number.isFinite(c[field])) out.current[field] = round1(c[field] + shift);
+    }
+    const humidity = out.current.relative_humidity_2m;
+    if (Number.isFinite(humidity)) out.current.relative_humidity_2m = Math.min(100, Math.max(0, Math.round(humidity)));
+  }
+
+  // Today's high and low must still include the temperature on screen right now.
+  if (out.daily.time[0] === c.time.slice(0, 10) && Number.isFinite(out.current.temperature_2m)) {
+    out.daily.temperature_2m_max[0] = Math.max(out.daily.temperature_2m_max[0], out.current.temperature_2m);
+    out.daily.temperature_2m_min[0] = Math.min(out.daily.temperature_2m_min[0], out.current.temperature_2m);
+  }
+  out.blendedModels = BLEND_MODELS;
+  return out;
+}
+
 async function getJson(base, params) {
   const url = `${base}?${new URLSearchParams(params)}`;
   const response = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
@@ -64,6 +132,7 @@ export function normalize(raw, airRaw, fetchedAt = Date.now()) {
 
   return {
     source: 'open-meteo',
+    models: raw.blendedModels?.length ?? 1,
     fetchedAt,
     current: {
       time: c.time,
@@ -118,7 +187,7 @@ export function normalize(raw, airRaw, fetchedAt = Date.now()) {
 
 export async function fetchWeather({ lat, lon }) {
   const place = { latitude: lat, longitude: lon, timezone: 'auto' };
-  const [forecast, air] = await Promise.all([
+  const [forecast, multi, air] = await Promise.all([
     getJson(FORECAST_URL, {
       ...place,
       forecast_days: 14,
@@ -126,6 +195,14 @@ export async function fetchWeather({ lat, lon }) {
       hourly: HOURLY_FIELDS.join(','),
       daily: DAILY_FIELDS.join(','),
     }),
+    // The model blend is an improvement, not a requirement: on failure the main forecast is used as it is.
+    getJson(FORECAST_URL, {
+      ...place,
+      forecast_days: 14,
+      models: BLEND_MODELS.join(','),
+      hourly: BLEND_HOURLY.join(','),
+      daily: BLEND_DAILY.join(','),
+    }).catch(() => null),
     // Air quality is a nice-to-have: a failure here shouldn't lose the forecast.
     getJson(AIR_URL, {
       ...place,
@@ -134,7 +211,7 @@ export async function fetchWeather({ lat, lon }) {
       hourly: 'us_aqi',
     }).catch(() => null),
   ]);
-  return normalize(forecast, air);
+  return normalize(blendModels(forecast, multi), air);
 }
 
 export async function searchPlaces(query) {

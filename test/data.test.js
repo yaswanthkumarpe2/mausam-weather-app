@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { normalize } from '../public/js/api.js';
+import { BLEND_MODELS, blendModels, normalize } from '../public/js/api.js';
 import { demoForecast } from '../public/js/demo.js';
 import {
   addDays, aqiBand, compassPoint, esc, fmtHour, fmtTemp, fmtWind, formatParams, uvBand,
@@ -218,5 +218,80 @@ describe('store', () => {
     assert.doesNotThrow(() => savePrefs(mergePrefs(null), broken));
     assert.equal(loadPrefs(broken).onboarded, false);
     assert.equal(readForecast('x', broken), null);
+  });
+});
+
+describe('blendModels', () => {
+  // Three models' hourly and daily values, keyed the way Open-Meteo returns them.
+  function multiModel({ temps, humidity, max, min }) {
+    const times = ['2026-11-05T00:00', '2026-11-05T01:00', '2026-11-05T02:00', '2026-11-05T03:00'];
+    const hourly = { time: times };
+    const daily = { time: ['2026-11-05'] };
+    BLEND_MODELS.forEach((model, m) => {
+      hourly[`temperature_2m_${model}`] = temps[m];
+      hourly[`apparent_temperature_${model}`] = temps[m];
+      hourly[`relative_humidity_2m_${model}`] = humidity[m];
+      daily[`temperature_2m_max_${model}`] = [max[m]];
+      daily[`temperature_2m_min_${model}`] = [min[m]];
+    });
+    return { hourly, daily };
+  }
+  const multi = multiModel({
+    temps: [[20, 21, 22, 23], [22, 23, 24, 25], [24, 25, 26, 27]],
+    humidity: [[90, 90, 90, 90], [80, 80, 80, 80], [40, 40, 40, 40]],
+    max: [28, 30, 32],
+    min: [18, 17, 16],
+  });
+
+  it('averages hourly and daily temperature and humidity across the models', () => {
+    const wx = normalize(blendModels(rawForecast(), multi));
+    assert.equal(wx.hourly[0].temp, 24); // 02:00: (22 + 24 + 26) / 3
+    assert.equal(wx.hourly[0].humidity, 70);
+    assert.equal(wx.daily[0].max, 30);
+    assert.equal(wx.daily[0].min, 17);
+    assert.equal(wx.models, 3);
+  });
+
+  it('shifts the live reading by the gap between the blend and the main model at that moment', () => {
+    // At 02:15 the main model says 22.25 (between 22 and 23) and the blend 24.25, so +2.
+    const wx = normalize(blendModels(rawForecast(), multi));
+    assert.equal(wx.current.temp, 23.7); // 21.7 + 2
+  });
+
+  it('skips models with no data for an hour instead of counting them as zero', () => {
+    const gappy = structuredClone(multi);
+    gappy.hourly[`temperature_2m_${BLEND_MODELS[1]}`] = [null, null, null, null];
+    const wx = normalize(blendModels(rawForecast(), gappy));
+    assert.equal(wx.hourly[0].temp, 24); // (22 + 26) / 2
+  });
+
+  it('keeps today’s high and low around the temperature shown now', () => {
+    const hot = multiModel({
+      temps: [[30, 31, 32, 33], [30, 31, 32, 33], [30, 31, 32, 33]],
+      humidity: [[50, 50, 50, 50], [50, 50, 50, 50], [50, 50, 50, 50]],
+      max: [25, 25, 25],
+      min: [18, 18, 18],
+    });
+    const wx = normalize(blendModels(rawForecast(), hot));
+    assert.ok(wx.daily[0].max >= wx.current.temp);
+  });
+
+  it('clamps humidity to 0–100', () => {
+    const wet = multiModel({
+      temps: [[20, 21, 22, 23], [20, 21, 22, 23], [20, 21, 22, 23]],
+      humidity: [[100, 100, 100, 100], [100, 100, 100, 100], [100, 100, 100, 100]],
+      max: [29, 29, 29],
+      min: [20, 20, 20],
+    });
+    const raw = rawForecast();
+    raw.hourly.relative_humidity_2m = [60, 60, 60, 60];
+    raw.current.relative_humidity_2m = 95;
+    assert.equal(normalize(blendModels(raw, wet)).current.humidity, 100);
+  });
+
+  it('returns the main forecast unchanged when the blend request failed', () => {
+    const raw = rawForecast();
+    assert.equal(blendModels(raw, null), raw);
+    assert.equal(normalize(raw).models, 1);
   });
 });

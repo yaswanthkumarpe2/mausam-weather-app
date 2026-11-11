@@ -1,6 +1,6 @@
 // Keeps the app shell available offline. Network first, so a new version is used
 // as soon as it's reachable. Forecasts are saved by the app itself (see store.js).
-const CACHE = 'mausam-shell-v2';
+const CACHE = 'mausam-shell-v3';
 
 const SHELL = [
   './',

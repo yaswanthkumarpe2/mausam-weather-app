@@ -16,6 +16,7 @@ const en = {
 
   'status.loading': 'Fetching the forecast…',
   'status.updated': 'Updated {age}',
+  'status.blended': 'average of {n} weather models',
   'status.justNow': 'just now',
   'status.minsAgo': '{n} min ago',
   'status.hoursAgo': '{n} h ago',
@@ -232,6 +233,7 @@ const hi = {
 
   'status.loading': 'पूर्वानुमान लाया जा रहा है…',
   'status.updated': '{age} अपडेट हुआ',
+  'status.blended': '{n} मौसम मॉडलों का औसत',
   'status.justNow': 'अभी',
   'status.minsAgo': '{n} मिनट पहले',
   'status.hoursAgo': '{n} घंटे पहले',

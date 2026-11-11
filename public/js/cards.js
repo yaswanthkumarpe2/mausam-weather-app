@@ -130,7 +130,7 @@ function renderHero(ctx, location) {
         <button data-action="share">${icon('share')}<span>${esc(t('hero.share'))}</span></button>
         <button data-action="open-sheet" data-sheet="report">${icon('megaphone')}<span>${esc(t('hero.report'))}</span></button>
       </div>
-      <p class="hero-updated">${esc(t('status.updated', { age: ageLabel(wx.fetchedAt, t) }))}</p>
+      <p class="hero-updated">${esc(t('status.updated', { age: ageLabel(wx.fetchedAt, t) }))}${wx.models > 1 ? ` · ${esc(t('status.blended', { n: wx.models }))}` : ''}</p>
     </header>`;
 }
 
