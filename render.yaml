@@ -1,0 +1,17 @@
+# Render Blueprint: one free Node web service. Render sets PORT itself.
+services:
+  - type: web
+    name: mausam
+    runtime: node
+    plan: free
+    buildCommand: "true"
+    startCommand: npm start
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: TRUST_PROXY
+        value: "1"
+      - key: NODE_VERSION
+        value: "22"

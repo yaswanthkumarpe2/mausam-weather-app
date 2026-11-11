@@ -1,0 +1,14 @@
+{
+  "name": "mausam-personalized-home",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Class project: a personalized weather app with maps, farm and health hubs, planning and community reports.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test \"test/*.test.js\""
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

@@ -1,0 +1,7 @@
+data/
+node_modules/
+.claude/
+*.docx
+*.pdf
+Ashvale-Viva-Notes.md
+Serviqo-Interview-Notes.md
